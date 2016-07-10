@@ -28,7 +28,7 @@ const Example =  React.createClass ({
       <View style={styles.container}>
         <View style={styles.content}>
           <Text style={styles.text}>
-            <Text style={styles.bold}> {this.state.num} </Text> images has been selected
+            <Text style={styles.bold}> {this.state.num} </Text> images have been selected
           </Text>
         </View>
         <CameraRollPicker
