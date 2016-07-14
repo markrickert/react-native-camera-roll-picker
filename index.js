@@ -151,6 +151,8 @@ var CameraRollPicker = React.createClass({
     } else {
       if (selected.length < this.props.maximum) {
         selected.push(image);
+      } else if (this.props.maximum === 1) {
+        selected = [image];
       }
     }
 
