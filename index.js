@@ -11,8 +11,7 @@ var {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
-  Dimensions,
+  ListView,
 } = ReactNative;
 
 var CameraRollPicker = React.createClass({
@@ -60,23 +59,32 @@ var CameraRollPicker = React.createClass({
   },
 
   getInitialState: function() {
+    var ds = new ListView.DataSource({rowHasChanged: (r1, r2) => r1 !== r2});
     return {
       images: [],
       selected: [],
       lastCursor: null,
       loadingMore: false,
       noMore: false,
+      dataSource: ds.cloneWithRows({}),
     };
   },
 
   componentDidMount: function() {
-    var { width } = Dimensions.get('window');
+    this.fetch();
+  },
 
-    var imageMargin = this.props.imageMargin,
-        imagesPerRow = this.props.imagesPerRow;
+  measureView(event) {
+    this.setState({
+      x: event.nativeEvent.layout.x,
+      y: event.nativeEvent.layout.y,
+      width: event.nativeEvent.layout.width,
+      height: event.nativeEvent.layout.height
+    })
+  },
 
-    this._imageSize = (width - (imagesPerRow + 1) * imageMargin) / imagesPerRow;
-
+  reset: function() {
+    this.setState(this.getInitialState());
     this.fetch();
   },
 
@@ -122,10 +130,13 @@ var CameraRollPicker = React.createClass({
       });
     }
 
+    const allImages = this.state.images.concat(images)
+
     if (assets.length > 0) {
       this.setState({
         lastCursor: data.page_info.end_cursor,
-        images: this.state.images.concat(images),
+        images: allImages,
+        dataSource: this.state.dataSource.cloneWithRows(allImages),
       })
     }
   },
@@ -150,82 +161,109 @@ var CameraRollPicker = React.createClass({
     this.props.callback(this.state.selected);
   },
 
-  _onEndReached: function() {
+  onEndReached: function() {
     if (!this.state.noMore) {
       this.fetch();
     }
   },
 
-  handleScroll: function(event) {
-    var layoutHeight = event.nativeEvent.layoutMeasurement.height,
-        imageHeight = this._imageSize + this.props.imageMargin * 2,
-        imagesPerScreen = Math.ceil(layoutHeight / imageHeight) * this.props.imagesPerRow,
-        currentScrollViewHeight = event.nativeEvent.contentOffset.y + layoutHeight,
-        loadMoreScrollHeight = (this.props.batchSize / imagesPerScreen) * layoutHeight;
+  renderItem: function(image: string, rowID: number) {
+    const imageSize = (this.state.width / this.props.imagesPerRow) - (this.props.imagesPerRow * this.props.imageMargin)
 
-    if (currentScrollViewHeight > loadMoreScrollHeight) {
-      this._onEndReached();
+    return (
+      <TouchableOpacity
+        key={image.uri}
+        style={{margin: this.props.imageMargin / 2}}
+        onPress={this._selectImage.bind(null, image.uri)}>
+        <Image
+          style={{width: imageSize, height: imageSize}}
+          source={{ uri: image.uri }}>
+          {this.renderSelectedMarker(image)}
+        </Image>
+      </TouchableOpacity>
+    )
+  },
+
+  renderSelectedMarker: function(image) {
+    if (this.state.selected.indexOf(image.uri) >= 0) {
+      if (this.props.selectedMarker) {
+        return (
+          this.props.selectedMarker
+        )
+      } else {
+        return (
+          <Image
+            style={styles.checkIcon}
+            source={require('./circle-check.png')}
+          />
+        )
+      }
+    } else {
+      return null
     }
   },
 
-  render: function() {
-    var imageMargin = this.props.imageMargin,
-        imageSize = this._imageSize,
-        selectedMarker = this.props.selectedMarker
-                          ?
-                          this.props.selectedMarker
-                          :
-                          <Image
-                            style={[ styles.checkIcon, { width: 25, height: 25, right: imageMargin + 5 }, ]}
-                            source={require('./circle-check.png')}
-                          />;
+  renderGroup: function(group) {
+    var that = this;
+    var items = group.map(function(item, index) {
+      return that.renderItem(item, index);
+    });
 
     return (
-      <ScrollView
-        style={styles.container}
-        onScroll={this.handleScroll} scrollEventThrottle={16}>
-        <View style={[ styles.imageContainer, { padding: imageMargin, paddingRight: 0, }, ]}>
-          { this.state.images.map((image) => {
-              return (
-                <TouchableOpacity
-                  key={image.uri}
-                  style={{ position: 'relative', marginBottom: imageMargin, }}
-                  onPress={this._selectImage.bind(null, image.uri)}>
-                  <Image
-                    style={{ width: imageSize, height: imageSize, marginRight: imageMargin, }}
-                    source={{ uri: image.uri }}
-                  >
-                    {
-                      this.state.selected.indexOf(image.uri) >= 0
-                      ?
-                      selectedMarker
-                      :
-                      null
-                    }
-                  </Image>
-                </TouchableOpacity>
-              );
-            })
-          }
-        </View>
-      </ScrollView>
+      <View style={styles.group}>
+        {items}
+      </View>
     );
+  },
+
+  render: function() {
+    const groups = this.groupItems(this.state.images, this.props.imagesPerRow);
+    return (
+      <View onLayout={(event) => this.measureView(event)}>
+        <ListView
+          {...this.props}
+          onEndReached={this.onEndReached}
+          scrollEventThrottle={16}
+          dataSource={this.state.dataSource.cloneWithRows(groups)}
+          renderRow={this.renderGroup}
+          enableEmptySections />
+      </View>
+    );
+  },
+
+  groupItems: function(items, imagesPerRow) {
+      var itemsGroups = [];
+      var group = [];
+      items.forEach(function(item) {
+        if (group.length === imagesPerRow) {
+          itemsGroups.push(group);
+          group = [item];
+        } else {
+          group.push(item);
+        }
+      });
+
+      if (group.length > 0) {
+        itemsGroups.push(group);
+      }
+
+      return itemsGroups;
   },
 });
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  imageContainer: {
-    flex: 1,
+  group: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden'
   },
   checkIcon: {
     position: 'absolute',
+    width: 25,
+    height: 25,
     top: 5,
+    right: 5,
     backgroundColor: 'transparent',
   },
 });
